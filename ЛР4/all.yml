@@ -1,0 +1,17 @@
+vip_address: "192.168.0.210"
+vip_cidr: "24"
+vip_interface: "ens18"
+
+web_backend_port: 80
+haproxy_frontend_port: 80
+
+backend_servers:
+  - name: "web-01"
+    address: "192.168.0.101"
+    port: 80
+  - name: "web-02"
+    address: "192.168.0.102"
+    port: 80
+
+vrrp_virtual_router_id: 51
+vrrp_auth_pass: "lab04pass"

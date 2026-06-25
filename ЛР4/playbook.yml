@@ -1,0 +1,99 @@
+- name: Configure backend web servers
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Create backend index page
+      copy:
+        dest: /var/www/html/index.html
+        owner: www-data
+        group: www-data
+        mode: "0644"
+        content: |
+          <!DOCTYPE html>
+          <html lang="ru">
+          <head>
+              <meta charset="UTF-8">
+              <title>Lab04 Backend</title>
+          </head>
+          <body>
+              <h1>ЛР-4. Backend: {{ backend_name }}</h1>
+              <p>Ответ с {{ inventory_hostname }}.</p>
+          </body>
+          </html>
+
+    - name: Ensure Nginx is started and enabled
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+- name: Configure HAProxy load balancers
+  hosts: lb
+  become: true
+
+  tasks:
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+        update_cache: true
+
+    - name: Deploy HAProxy configuration
+      template:
+        src: haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart haproxy
+
+    - name: Ensure HAProxy is started and enabled
+      systemd:
+        name: haproxy
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart haproxy
+      systemd:
+        name: haproxy
+        state: restarted
+
+- name: Configure Keepalived for VIP failover
+  hosts: lb
+  become: true
+
+  tasks:
+    - name: Install Keepalived
+      apt:
+        name: keepalived
+        state: present
+        update_cache: true
+
+    - name: Deploy Keepalived configuration
+      template:
+        src: keepalived.conf.j2
+        dest: /etc/keepalived/keepalived.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart keepalived
+
+    - name: Ensure Keepalived is started and enabled
+      systemd:
+        name: keepalived
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart keepalived
+      systemd:
+        name: keepalived
+        state: restarted
