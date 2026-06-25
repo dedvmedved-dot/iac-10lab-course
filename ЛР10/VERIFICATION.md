@@ -1,17 +1,22 @@
-# ЛР10 — Верификация Kubernetes (kubeadm + Velero + S3)
+# ЛР10 — Верификация Kubernetes + деплой приложений
 
-**Статус**: ⚠️ Пройдена (без деплоя — сквозные баги)
+**Статус**: 🔴 КРИТИЧЕСКИЙ
 **Дата**: 2026-06-25
 
-## 5 сквозных багов (как ЛР1-ЛР5)
+## Ключевой результат
 
-Те же: clone, student, local-lvm, ANSIBLE_HOST_KEY_CHECKING, cicustom.
+ЛР10 не содержит Terraform-код. 3-6 ВМ (k8s control-plane + workers). `student` в Ansible.
 
-## Специфичные замечания
+### Найденные проблемы
 
-6. 🟡 **4 ВМ** (k8s-cp1 .220, k8s-w1 .221, k8s-w2 .222, minio1 .223) — минимум 16 ГБ RAM
-7. 🟡 **kubeadm** — требует отключения swap, настройки iptables
-8. 🟡 **containerd** — требует модулей br_netfilter, overlay
-9. 🟡 **Velero** — зависит от S3-хранилища (minio1 или облачного)
-10. 🟡 **CNI (Calico/Flannel)** — не упомянуто, какой именно
-11. 🟡 **Сертификаты k8s** — не упомянут срок действия (1 год по умолчанию)
+1. **🔴 CRITICAL: Отсутствует Terraform main.tf**
+
+2. **🔴 CRITICAL: `ansible_user=student`** (сквозной)
+
+3. **🟡 MEDIUM: `local-lvm` в примерах** (сквозной)
+
+4. **🟡 LOW: Версия Kubernetes зафиксирована**
+
+### Рекомендации
+
+Стандартный исправленный main.tf как для ЛР3 с clone, vm-storage, ubuntu.

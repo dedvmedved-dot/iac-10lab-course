@@ -1,16 +1,20 @@
-# ЛР8 — Верификация Consul Service Discovery + DNS-балансировка
+# ЛР8 — Верификация Consul Service Discovery + DNS
 
-**Статус**: ⚠️ Пройдена (без деплоя — сквозные баги)
+**Статус**: 🔴 КРИТИЧЕСКИЙ
 **Дата**: 2026-06-25
 
-## 5 сквозных багов (как ЛР1-ЛР5)
+## Ключевой результат
 
-Те же: clone, student, local-lvm, ANSIBLE_HOST_KEY_CHECKING, cicustom.
+ЛР8 не содержит Terraform-код. 3-4 ВМ (Consul cluster + клиенты). `student` в Ansible.
 
-## Специфичные замечания
+### Найденные проблемы
 
-6. 🟡 **5 ВМ** (consul1/2/3, web1/2) — Consul требует кворум (>=3 сервера)
-7. 🟡 **Consul binary** — установка из HashiCorp репозитория (геоблокировка!)
-8. 🟡 **DNS на порту 8600** — нестандартный порт, фаервол
-9. 🟡 **Consul gossip протокол** — порты 8300-8302
-10. 🟡 **health checks** — если сервис упал, Consul исключает его из DNS
+1. **🔴 CRITICAL: Отсутствует Terraform main.tf**
+
+2. **🔴 CRITICAL: `ansible_user=student`** (сквозной)
+
+3. **🟡 MEDIUM: `local-lvm` в примерах** (сквозной)
+
+### Рекомендации
+
+Стандартный исправленный main.tf как для ЛР3 с clone, vm-storage, ubuntu.

@@ -1,15 +1,25 @@
-# ЛР7 — Верификация кластера MySQL (Percona XtraDB Cluster)
+# ЛР7 — Верификация MySQL Percona XtraDB Cluster
 
-**Статус**: ⚠️ Пройдена (без деплоя — сквозные баги)
+**Статус**: 🔴 КРИТИЧЕСКИЙ
 **Дата**: 2026-06-25
 
-## 5 сквозных багов (как ЛР1-ЛР5)
+## Ключевой результат
 
-Те же: clone, student, local-lvm, ANSIBLE_HOST_KEY_CHECKING, cicustom.
+ЛР7 не содержит Terraform-код. Ansible-конфигурация использует `student`.
 
-## Специфичные замечания
+### Найденные проблемы
 
-6. 🟡 **3 ВМ** (pxc1/2/3, IP .171-.173) — Percona репозиторий нестандартный
-7. 🟡 **bootstrap первого узла** — критический шаг PXC: при ошибке кластер не соберётся
-8. 🟡 **SST (State Snapshot Transfer)** — порты 4444, 4567, 4568 на фаерволе
-9. 🟡 **galera** — AppArmor может блокировать
+1. **🔴 CRITICAL: Отсутствует Terraform main.tf**
+   3 ВМ Percona кластер + 2 HAProxy = 5 ВМ. Код не предоставлен.
+
+2. **🔴 CRITICAL: `ansible_user=student`** (сквозной)
+
+3. **🟡 MEDIUM: `local-lvm` в примерах** (сквозной)
+
+### Рекомендации
+
+Добавить Terraform код как в ЛР1, с исправлениями:
+- `clone { vm_id = 9000 }`
+- `datastore_id = "vm-storage"`  
+- `user = "ubuntu"`
+- `-parallelism=2`
