@@ -1,0 +1,56 @@
+---
+- name: Setup Consul cluster
+  hosts: consul_servers:consul_clients
+  become: true
+  tasks:
+    - name: Install unzip
+      apt:
+        name: unzip
+        state: present
+
+    - name: Download Consul binary
+      get_url:
+        url: "https://releases.hashicorp.com/consul/1.19.2/consul_1.19.2_linux_amd64.zip"
+        dest: /tmp/consul.zip
+      tags: [install]
+
+    - name: Extract Consul
+      unarchive:
+        src: /tmp/consul.zip
+        dest: /usr/local/bin/
+        remote_src: true
+      tags: [install]
+
+    - name: Create Consul config
+      template:
+        src: consul.hcl.j2
+        dest: /etc/consul.d/consul.hcl
+      notify: restart consul
+      tags: [config]
+
+    - name: Start Consul
+      systemd:
+        name: consul
+        state: started
+        enabled: true
+      tags: [start]
+
+  handlers:
+    - name: restart consul
+      systemd:
+        name: consul
+        state: restarted
+
+- name: Register web service in Consul
+  hosts: consul_clients
+  tasks:
+    - name: Register service
+      uri:
+        url: "http://127.0.0.1:8500/v1/agent/service/register"
+        method: PUT
+        body_format: json
+        body:
+          Name: "web"
+          Port: 80
+        status_code: 200
+      tags: [register]

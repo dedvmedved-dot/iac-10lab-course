@@ -1,0 +1,95 @@
+---
+- name: Setup Java (required for Kafka, Logstash, OpenSearch)
+  hosts: kafka:logstash:opensearch
+  become: true
+  tasks:
+    - name: Install OpenJDK
+      apt:
+        name: openjdk-17-jre-headless
+        state: present
+      tags: [java]
+
+- name: Setup Kafka KRaft
+  hosts: kafka
+  become: true
+  tasks:
+    - name: Install Kafka
+      apt:
+        name: kafka
+        state: present
+      tags: [kafka]
+
+    - name: Start Kafka
+      systemd:
+        name: kafka
+        state: started
+        enabled: true
+      tags: [kafka]
+
+- name: Setup OpenSearch
+  hosts: opensearch
+  become: true
+  tasks:
+    - name: Install OpenSearch
+      apt:
+        name: opensearch
+        state: present
+      tags: [opensearch]
+
+    - name: Start OpenSearch
+      systemd:
+        name: opensearch
+        state: started
+        enabled: true
+      tags: [opensearch]
+
+- name: Setup OpenSearch Dashboards
+  hosts: dashboards
+  become: true
+  tasks:
+    - name: Install Dashboards
+      apt:
+        name: opensearch-dashboards
+        state: present
+      tags: [dashboards]
+
+    - name: Start Dashboards
+      systemd:
+        name: opensearch-dashboards
+        state: started
+        enabled: true
+      tags: [dashboards]
+
+- name: Setup Logstash
+  hosts: logstash
+  become: true
+  tasks:
+    - name: Install Logstash
+      apt:
+        name: logstash
+        state: present
+      tags: [logstash]
+
+    - name: Start Logstash
+      systemd:
+        name: logstash
+        state: started
+        enabled: true
+      tags: [logstash]
+
+- name: Setup Filebeat on log client
+  hosts: log_clients
+  become: true
+  tasks:
+    - name: Install Filebeat
+      apt:
+        name: filebeat
+        state: present
+      tags: [filebeat]
+
+    - name: Start Filebeat
+      systemd:
+        name: filebeat
+        state: started
+        enabled: true
+      tags: [filebeat]

@@ -1,0 +1,120 @@
+---
+- name: Prepare Kubernetes prerequisites
+  hosts: all
+  become: true
+  tasks:
+    - name: Disable swap
+      command: swapoff -a
+      changed_when: false
+
+    - name: Load kernel modules
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+      notify: modprobe
+
+    - name: Set sysctl for Kubernetes
+      sysctl:
+        name: "{{ item }}"
+        value: '1'
+        sysctl_set: true
+      loop:
+        - net.bridge.bridge-nf-call-iptables
+        - net.ipv4.ip_forward
+
+    - name: Install containerd
+      apt:
+        name: containerd
+        state: present
+      notify: restart containerd
+
+    - name: Install kubeadm, kubelet, kubectl
+      apt:
+        name:
+          - kubeadm
+          - kubelet
+          - kubectl
+        state: present
+      tags: [install]
+
+  handlers:
+    - name: modprobe
+      command: "modprobe {{ item }}"
+      loop: [overlay, br_netfilter]
+
+    - name: restart containerd
+      systemd:
+        name: containerd
+        state: restarted
+
+- name: Initialize Kubernetes control plane
+  hosts: k8s_control
+  become: true
+  tasks:
+    - name: Initialize cluster
+      command: kubeadm init --pod-network-cidr=10.244.0.0/16
+      args:
+        creates: /etc/kubernetes/admin.conf
+      tags: [init]
+
+    - name: Setup kubeconfig for ubuntu user
+      shell: |
+        mkdir -p /home/ubuntu/.kube
+        cp /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
+        chown -R ubuntu:ubuntu /home/ubuntu/.kube
+
+    - name: Install Flannel CNI
+      command: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      tags: [cni]
+
+    - name: Get join command
+      command: kubeadm token create --print-join-command
+      register: join_command
+      tags: [join]
+
+    - name: Save join command
+      copy:
+        content: "{{ join_command.stdout }}"
+        dest: /tmp/kubeadm-join.sh
+      delegate_to: localhost
+      tags: [join]
+
+- name: Join worker nodes
+  hosts: k8s_workers
+  become: true
+  vars:
+    join_cmd: "{{ lookup('file', '/tmp/kubeadm-join.sh') }}"
+  tasks:
+    - name: Join cluster
+      command: "{{ join_cmd }}"
+      args:
+        creates: /etc/kubernetes/kubelet.conf
+      tags: [join]
+
+- name: Setup MinIO for Velero
+  hosts: minio
+  become: true
+  tasks:
+    - name: Download MinIO
+      get_url:
+        url: https://dl.min.io/server/minio/release/linux-amd64/minio
+        dest: /usr/local/bin/minio
+        mode: '0755'
+
+    - name: Create minio data dir
+      file:
+        path: /data/minio
+        state: directory
+        owner: ubuntu
+
+    - name: Start MinIO
+      command: >
+        MINIO_ROOT_USER=admin MINIO_ROOT_PASSWORD=minioadmin
+        minio server /data/minio --console-address ":9001"
+      async: 10
+      poll: 0
+      tags: [minio]

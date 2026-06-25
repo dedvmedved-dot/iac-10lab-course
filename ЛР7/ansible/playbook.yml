@@ -1,0 +1,35 @@
+---
+- name: Setup Percona XtraDB Cluster
+  hosts: pxc
+  become: true
+  tasks:
+    - name: Add Percona repository
+      apt:
+        name: percona-release
+        state: present
+      tags: [repo]
+
+    - name: Enable PXC repository
+      command: percona-release setup pxc-80
+      args:
+        creates: /etc/apt/sources.list.d/percona-pxc-80-release.list
+      tags: [repo]
+
+    - name: Install Percona XtraDB Cluster
+      apt:
+        name: percona-xtradb-cluster
+        state: present
+      tags: [install]
+
+    - name: Bootstrap first node
+      command: systemctl start mysql@bootstrap
+      when: bootstrap | bool
+      tags: [bootstrap]
+
+    - name: Start PXC on other nodes
+      systemd:
+        name: mysql
+        state: started
+        enabled: true
+      when: not (bootstrap | bool)
+      tags: [start]

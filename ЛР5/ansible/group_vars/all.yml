@@ -1,0 +1,7 @@
+# Общие переменные ЛР5
+pg_version: 16
+patroni_version: "4.0.4"
+etcd_version: "3.5.17"
+vip_address: "192.168.0.179"
+haproxy_stats_user: admin
+haproxy_stats_pass: changeme

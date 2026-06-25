@@ -1,0 +1,92 @@
+---
+- name: Setup etcd cluster
+  hosts: etcd
+  become: true
+  tasks:
+    - name: Install etcd
+      apt:
+        name: etcd
+        state: present
+      tags: [etcd, install]
+
+    - name: Configure etcd
+      template:
+        src: etcd.env.j2
+        dest: /etc/default/etcd
+      notify: restart etcd
+      tags: [etcd, config]
+
+    - name: Start etcd
+      systemd:
+        name: etcd
+        state: started
+        enabled: true
+      tags: [etcd]
+
+  handlers:
+    - name: restart etcd
+      systemd:
+        name: etcd
+        state: restarted
+
+- name: Setup PostgreSQL with Patroni
+  hosts: postgres
+  become: true
+  tasks:
+    - name: Install PostgreSQL
+      apt:
+        name:
+          - postgresql-{{ pg_version }}
+          - postgresql-client-{{ pg_version }}
+        state: present
+      tags: [pg, install]
+
+    - name: Install Patroni via pip
+      pip:
+        name: patroni[etcd]
+        state: present
+        break_system_packages: true
+      tags: [patroni, install]
+
+    - name: Configure Patroni
+      template:
+        src: patroni.yml.j2
+        dest: /etc/patroni.yml
+      tags: [patroni, config]
+
+    - name: Start Patroni
+      systemd:
+        name: patroni
+        state: started
+        enabled: true
+      tags: [patroni]
+
+- name: Setup HAProxy
+  hosts: haproxy
+  become: true
+  tasks:
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+      tags: [haproxy, install]
+
+    - name: Configure HAProxy
+      template:
+        src: haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+      notify: reload haproxy
+      tags: [haproxy, config]
+
+    - name: Start HAProxy
+      systemd:
+        name: haproxy
+        state: started
+        enabled: true
+      tags: [haproxy]
+
+  handlers:
+    - name: reload haproxy
+      systemd:
+        name: haproxy
+        state: reloaded

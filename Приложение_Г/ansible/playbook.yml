@@ -1,0 +1,82 @@
+---
+- name: Setup iSCSI target
+  hosts: iscsi_target
+  become: true
+  tasks:
+    - name: Install targetcli
+      apt:
+        name: targetcli-fb
+        state: present
+      tags: [install]
+
+    - name: Create iSCSI backstore
+      command: targetcli /backstores/block create lr11_disk /dev/sdb
+      args:
+        creates: /sys/kernel/config/target/core/block_0/lr11_disk
+      tags: [config]
+
+    - name: Create iSCSI target
+      command: targetcli /iscsi create iqn.2025-04.lab.lr11:target1
+      args:
+        creates: /sys/kernel/config/target/iscsi/iqn.2025-04.lab.lr11:target1
+      tags: [config]
+
+    - name: Create LUN
+      command: targetcli /iscsi/iqn.2025-04.lab.lr11:target1/tpg1/luns create /backstores/block/lr11_disk
+      args:
+        creates: /sys/kernel/config/target/iscsi/iqn.2025-04.lab.lr11:target1/tpg1/lun/lun_0
+      tags: [config]
+
+    - name: Enable target portal
+      command: targetcli /iscsi/iqn.2025-04.lab.lr11:target1/tpg1/portals create 0.0.0.0 3260
+      tags: [config]
+
+    - name: Save configuration
+      command: targetcli saveconfig
+      tags: [config]
+
+- name: Setup GFS2 nodes (iSCSI initiators)
+  hosts: gfs2_nodes
+  become: true
+  tasks:
+    - name: Install iSCSI initiator and GFS2 tools
+      apt:
+        name:
+          - open-iscsi
+          - lvm2
+          - gfs2-utils
+          - dlm
+          - corosync
+          - pcs
+        state: present
+      tags: [install]
+
+    - name: Discover iSCSI target
+      command: iscsiadm -m discovery -t st -p 192.168.0.230
+      changed_when: false
+      tags: [discover]
+
+    - name: Login to iSCSI target
+      command: iscsiadm -m node -T iqn.2025-04.lab.lr11:target1 -p 192.168.0.230 --login
+      tags: [login]
+
+    - name: Start LVM locking daemon
+      systemd:
+        name: lvmlockd
+        state: started
+        enabled: true
+      tags: [lvm]
+
+    - name: Start DLM
+      systemd:
+        name: dlm
+        state: started
+        enabled: true
+      tags: [corosync]
+
+    - name: Start Corosync
+      systemd:
+        name: corosync
+        state: started
+        enabled: true
+      tags: [corosync]
