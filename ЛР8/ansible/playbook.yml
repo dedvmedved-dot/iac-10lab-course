@@ -27,6 +27,14 @@
             - /opt/consul
       tags: [setup]
 
+    - name: Assemble Consul binary from parts
+      delegate_to: localhost
+      run_once: true
+      shell: cd "{{ playbook_dir }}/files" && bash join-consul.sh
+      args:
+        creates: "{{ playbook_dir }}/files/consul"
+      tags: [install]
+
     - name: Copy Consul binary
       copy:
         src: consul
