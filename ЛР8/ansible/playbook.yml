@@ -8,28 +8,67 @@
         name: unzip
         state: present
 
-    - name: Download Consul binary
-      get_url:
-        url: "https://releases.hashicorp.com/consul/1.19.2/consul_1.19.2_linux_amd64.zip"
-        dest: /tmp/consul.zip
-      tags: [install]
+    - name: Create consul user and directories
+      block:
+        - name: Create consul user
+          user:
+            name: consul
+            system: yes
+            create_home: no
+            shell: /usr/sbin/nologin
+        - name: Create consul directories
+          file:
+            path: "{{ item }}"
+            state: directory
+            owner: consul
+            group: consul
+          loop:
+            - /etc/consul.d
+            - /opt/consul
+      tags: [setup]
 
-    - name: Extract Consul
-      unarchive:
-        src: /tmp/consul.zip
-        dest: /usr/local/bin/
-        remote_src: true
+    - name: Copy Consul binary
+      copy:
+        src: consul
+        dest: /usr/local/bin/consul
+        mode: '0755'
       tags: [install]
 
     - name: Create Consul config
       template:
         src: consul.hcl.j2
         dest: /etc/consul.d/consul.hcl
+        owner: consul
+        group: consul
       notify: restart consul
       tags: [config]
 
+    - name: Create systemd unit
+      copy:
+        content: |
+          [Unit]
+          Description=Consul Agent
+          Requires=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=consul
+          Group=consul
+          ExecStart=/usr/local/bin/consul agent -config-dir /etc/consul.d
+          ExecReload=/bin/kill -HUP $MAINPID
+          KillMode=process
+          Restart=on-failure
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/consul.service
+      notify: daemon reload
+      tags: [service]
+
     - name: Start Consul
       systemd:
+        daemon_reload: yes
         name: consul
         state: started
         enabled: true
@@ -41,9 +80,31 @@
         name: consul
         state: restarted
 
+    - name: daemon reload
+      systemd:
+        daemon_reload: yes
+
 - name: Register web service in Consul
   hosts: consul_clients
   tasks:
+    - name: Install nginx for web service
+      become: true
+      apt:
+        name: nginx
+        state: present
+
+    - name: Start nginx
+      become: true
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Wait for Consul API
+      wait_for:
+        port: 8500
+        timeout: 30
+
     - name: Register service
       uri:
         url: "http://127.0.0.1:8500/v1/agent/service/register"

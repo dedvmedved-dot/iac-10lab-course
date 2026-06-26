@@ -1,0 +1,17 @@
+
+{% if consul_role == 'server' %}
+server = true
+bootstrap_expect = 3
+retry_join = ["192.168.0.181", "192.168.0.182", "192.168.0.183"]
+{% else %}
+server = false
+retry_join = ["192.168.0.181", "192.168.0.182", "192.168.0.183"]
+{% endif %}
+datacenter = "dc1"
+data_dir = "/opt/consul"
+bind_addr = "{{ ansible_facts.default_ipv4.address }}"
+client_addr = "0.0.0.0"
+ui_config {
+  enabled = true
+}
+enable_script_checks = true

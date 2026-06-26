@@ -2,12 +2,31 @@
 - name: Setup etcd cluster
   hosts: etcd
   become: true
+  vars:
+    etcd_version: "3.5.17"
   tasks:
-    - name: Install etcd
-      apt:
-        name: etcd
-        state: present
+    - name: Download etcd binary
+      get_url:
+        url: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_version }}/etcd-v{{ etcd_version }}-linux-amd64.tar.gz"
+        dest: /tmp/etcd.tar.gz
+        mode: '0644'
       tags: [etcd, install]
+
+    - name: Extract etcd
+      unarchive:
+        src: /tmp/etcd.tar.gz
+        dest: /usr/local/bin/
+        remote_src: true
+        extra_opts: ["--strip-components=1", "etcd-v{{ etcd_version }}-linux-amd64/etcd", "etcd-v{{ etcd_version }}-linux-amd64/etcdctl", "etcd-v{{ etcd_version }}-linux-amd64/etcdutl"]
+      tags: [etcd, install]
+
+    - name: Create etcd data dir
+      file:
+        path: /var/lib/etcd/default
+        state: directory
+        owner: root
+        mode: '0755'
+      tags: [etcd, config]
 
     - name: Configure etcd
       template:
@@ -16,11 +35,32 @@
       notify: restart etcd
       tags: [etcd, config]
 
+    - name: Create etcd systemd service
+      copy:
+        dest: /etc/systemd/system/etcd.service
+        content: |
+          [Unit]
+          Description=etcd key-value store
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          EnvironmentFile=/etc/default/etcd
+          ExecStart=/usr/local/bin/etcd
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart etcd
+      tags: [etcd, config]
+
     - name: Start etcd
       systemd:
         name: etcd
         state: started
         enabled: true
+        daemon_reload: true
       tags: [etcd]
 
   handlers:
@@ -28,30 +68,69 @@
       systemd:
         name: etcd
         state: restarted
+        daemon_reload: true
 
 - name: Setup PostgreSQL with Patroni
   hosts: postgres
   become: true
+  vars:
+    pg_version: "16"
   tasks:
     - name: Install PostgreSQL
       apt:
         name:
-          - postgresql-{{ pg_version }}
-          - postgresql-client-{{ pg_version }}
+          - "postgresql-{{ pg_version }}"
+          - "postgresql-client-{{ pg_version }}"
+          - python3-pip
         state: present
+        update_cache: true
       tags: [pg, install]
+
+    - name: Stop default PostgreSQL
+      systemd:
+        name: "postgresql@{{ pg_version }}-main"
+        state: stopped
+        enabled: false
+      ignore_errors: true
+      tags: [pg]
 
     - name: Install Patroni via pip
       pip:
-        name: patroni[etcd]
+        name: "patroni[etcd]"
         state: present
         break_system_packages: true
       tags: [patroni, install]
 
+    - name: Create Patroni config dir
+      file:
+        path: /etc/patroni
+        state: directory
+      tags: [patroni, config]
+
     - name: Configure Patroni
       template:
         src: patroni.yml.j2
-        dest: /etc/patroni.yml
+        dest: /etc/patroni/patroni.yml
+      tags: [patroni, config]
+
+    - name: Create Patroni systemd service
+      copy:
+        dest: /etc/systemd/system/patroni.service
+        content: |
+          [Unit]
+          Description=Patroni PostgreSQL HA
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          ExecStart=/usr/local/bin/patroni /etc/patroni/patroni.yml
+          Restart=always
+          RestartSec=5
+          User=postgres
+          Group=postgres
+
+          [Install]
+          WantedBy=multi-user.target
       tags: [patroni, config]
 
     - name: Start Patroni
@@ -59,6 +138,7 @@
         name: patroni
         state: started
         enabled: true
+        daemon_reload: true
       tags: [patroni]
 
 - name: Setup HAProxy

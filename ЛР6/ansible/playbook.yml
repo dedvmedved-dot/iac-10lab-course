@@ -1,95 +1,211 @@
 ---
-- name: Setup Java (required for Kafka, Logstash, OpenSearch)
-  hosts: kafka:logstash:opensearch
+# ЛР6: Централизованное логирование (ELK-стек) — исправленный
+# Зеркала: Apache Kafka → mirror.yandex.ru
+#           Elastic → mirror.yandex.ru (APT)
+#           OpenSearch → GitHub
+
+- name: Install Java
+  hosts: search,kafka
   become: true
   tasks:
-    - name: Install OpenJDK
+    - name: Install OpenJDK 17
       apt:
-        name: openjdk-17-jre-headless
+        name: openjdk-17-jdk-headless
         state: present
-      tags: [java]
+        update_cache: yes
 
-- name: Setup Kafka KRaft
+- name: Setup Kafka
   hosts: kafka
   become: true
+  vars:
+    kafka_ver: "4.2.0"
+    kafka_scala: "2.13"
+    kafka_url: "https://mirror.yandex.ru/mirrors/apache/kafka/{{ kafka_ver }}/kafka_{{ kafka_scala }}-{{ kafka_ver }}.tgz"
   tasks:
-    - name: Install Kafka
-      apt:
-        name: kafka
-        state: present
-      tags: [kafka]
-
+    - name: Download Kafka
+      get_url:
+        url: "{{ kafka_url }}"
+        dest: /tmp/kafka.tgz
+    - name: Extract Kafka
+      unarchive:
+        src: /tmp/kafka.tgz
+        dest: /opt/
+        remote_src: yes
+        creates: /opt/kafka_{{ kafka_scala }}-{{ kafka_ver }}
+    - name: Create symlink
+      file:
+        src: /opt/kafka_{{ kafka_scala }}-{{ kafka_ver }}
+        dest: /opt/kafka
+        state: link
+    - name: Kafka systemd unit
+      copy:
+        dest: /etc/systemd/system/kafka.service
+        content: |
+          [Unit]
+          Description=Apache Kafka
+          After=network.target
+          [Service]
+          ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+          ExecStop=/opt/kafka/bin/kafka-server-stop.sh
+          Restart=on-failure
+          User=root
+          [Install]
+          WantedBy=multi-user.target
     - name: Start Kafka
       systemd:
         name: kafka
         state: started
-        enabled: true
-      tags: [kafka]
+        enabled: yes
 
 - name: Setup OpenSearch
   hosts: opensearch
   become: true
+  vars:
+    os_ver: "3.7.0"
+    os_url: "https://github.com/opensearch-project/OpenSearch/releases/download/{{ os_ver }}/opensearch-{{ os_ver }}-linux-x64.tar.gz"
   tasks:
-    - name: Install OpenSearch
-      apt:
-        name: opensearch
-        state: present
-      tags: [opensearch]
-
+    - name: Download OpenSearch
+      get_url:
+        url: "{{ os_url }}"
+        dest: /tmp/opensearch.tgz
+    - name: Extract OpenSearch
+      unarchive:
+        src: /tmp/opensearch.tgz
+        dest: /opt/
+        remote_src: yes
+        creates: /opt/opensearch-{{ os_ver }}
+    - name: Create symlink
+      file:
+        src: /opt/opensearch-{{ os_ver }}
+        dest: /opt/opensearch
+        state: link
+    - name: Configure OpenSearch (single-node, no security)
+      copy:
+        dest: /opt/opensearch/config/opensearch.yml
+        content: |
+          network.host: 0.0.0.0
+          discovery.type: single-node
+          plugins.security.disabled: true
+    - name: OpenSearch systemd unit
+      copy:
+        dest: /etc/systemd/system/opensearch.service
+        content: |
+          [Unit]
+          Description=OpenSearch
+          After=network.target
+          [Service]
+          ExecStart=/opt/opensearch/bin/opensearch
+          Restart=on-failure
+          User=root
+          Environment=OPENSEARCH_JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+          [Install]
+          WantedBy=multi-user.target
     - name: Start OpenSearch
       systemd:
         name: opensearch
         state: started
-        enabled: true
-      tags: [opensearch]
+        enabled: yes
+        daemon_reload: yes
 
 - name: Setup OpenSearch Dashboards
   hosts: dashboards
   become: true
+  vars:
+    osd_ver: "3.7.0"
+    osd_url: "https://github.com/opensearch-project/OpenSearch-Dashboards/releases/download/{{ osd_ver }}/opensearch-dashboards-{{ osd_ver }}-linux-x64.tar.gz"
   tasks:
-    - name: Install Dashboards
-      apt:
-        name: opensearch-dashboards
-        state: present
-      tags: [dashboards]
-
+    - name: Download Dashboards
+      get_url:
+        url: "{{ osd_url }}"
+        dest: /tmp/osdash.tgz
+    - name: Extract Dashboards
+      unarchive:
+        src: /tmp/osdash.tgz
+        dest: /opt/
+        remote_src: yes
+        creates: /opt/opensearch-dashboards-{{ osd_ver }}
+    - name: Create symlink
+      file:
+        src: /opt/opensearch-dashboards-{{ osd_ver }}
+        dest: /opt/osdash
+        state: link
+    - name: Configure Dashboards
+      copy:
+        dest: /opt/osdash/config/opensearch_dashboards.yml
+        content: |
+          server.host: 0.0.0.0
+          opensearch.hosts: ["http://192.168.0.162:9200"]
+          opensearch_security.multitenancy.enabled: false
+    - name: Dashboards systemd unit
+      copy:
+        dest: /etc/systemd/system/osdash.service
+        content: |
+          [Unit]
+          Description=OpenSearch Dashboards
+          After=network.target
+          [Service]
+          ExecStart=/opt/osdash/bin/opensearch-dashboards
+          Restart=on-failure
+          User=root
+          [Install]
+          WantedBy=multi-user.target
     - name: Start Dashboards
       systemd:
-        name: opensearch-dashboards
+        name: osdash
         state: started
-        enabled: true
-      tags: [dashboards]
+        enabled: yes
+        daemon_reload: yes
 
-- name: Setup Logstash
-  hosts: logstash
+- name: Setup Logstash + Filebeat (Elastic APT via Yandex mirror)
+  hosts: logstash,log_clients
   become: true
   tasks:
-    - name: Install Logstash
+    - name: Add Elastic GPG key
+      apt_key:
+        url: https://mirror.yandex.ru/mirrors/elastic/GPG-KEY-elasticsearch
+        state: present
+    - name: Add Elastic repo (Yandex mirror)
+      apt_repository:
+        repo: "deb https://mirror.yandex.ru/mirrors/elastic/8/ stable main"
+        state: present
+        filename: elastic
+    - name: Install Logstash (on logstash host)
       apt:
         name: logstash
         state: present
-      tags: [logstash]
-
+        update_cache: yes
+      when: inventory_hostname in groups['logstash']
+    - name: Install Filebeat (on log_client host)
+      apt:
+        name: filebeat
+        state: present
+      when: inventory_hostname in groups['log_clients']
+    - name: Configure Logstash — basic pipeline
+      copy:
+        dest: /etc/logstash/conf.d/basic.conf
+        content: |
+          input { beats { port => 5044 } }
+          output { elasticsearch { hosts => ["http://192.168.0.162:9200"] index => "logstash-%{+YYYY.MM.dd}" } }
+      when: inventory_hostname in groups['logstash']
     - name: Start Logstash
       systemd:
         name: logstash
         state: started
-        enabled: true
-      tags: [logstash]
-
-- name: Setup Filebeat on log client
-  hosts: log_clients
-  become: true
-  tasks:
-    - name: Install Filebeat
-      apt:
-        name: filebeat
-        state: present
-      tags: [filebeat]
-
+        enabled: yes
+      when: inventory_hostname in groups['logstash']
+    - name: Configure Filebeat — send to Logstash
+      copy:
+        dest: /etc/filebeat/filebeat.yml
+        content: |
+          filebeat.inputs:
+          - type: log
+            paths: ["/var/log/syslog"]
+          output.logstash:
+            hosts: ["192.168.0.161:5044"]
+      when: inventory_hostname in groups['log_clients']
     - name: Start Filebeat
       systemd:
         name: filebeat
         state: started
-        enabled: true
-      tags: [filebeat]
+        enabled: yes
+      when: inventory_hostname in groups['log_clients']

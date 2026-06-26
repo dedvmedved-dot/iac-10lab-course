@@ -11,10 +11,10 @@ terraform {
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
   api_token = var.proxmox_api_token
+  insecure  = true
 }
 
 locals {
-  ssh_key = trimspace(file(pathexpand(var.ssh_public_key_path)))
   vms =     {
     "consul1" = { id = 608, ip = "192.168.0.181/24", cores = 2, mem = 2048, disk = 20 }
     "consul2" = { id = 609, ip = "192.168.0.182/24", cores = 2, mem = 2048, disk = 20 }
@@ -63,29 +63,6 @@ resource "proxmox_virtual_environment_vm" "ЛР8" {
         gateway = var.gateway
       }
     }
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init_ЛР8.id
-  }
-}
-
-resource "proxmox_virtual_environment_file" "cloud_init_ЛР8" {
-  node_name    = var.proxmox_node_name
-  datastore_id = "local"
-  content_type = "snippets"
-
-  source_raw {
-    data = <<-EOF
-      #cloud-config
-      ssh_pwauth: false
-      users:
-        - name: ${var.vm_user}
-          sudo: ALL=(ALL) NOPASSWD:ALL
-          shell: /bin/bash
-          ssh_authorized_keys:
-            - ${local.ssh_key}
-          lock_passwd: true
-      runcmd:
-        - hostnamectl set-hostname each.key
-    EOF
-    file_name = "cloud-init-ЛР8.yml"
+    user_data_file_id = "snippets:cloud-init-lr8.yml"
   }
 }

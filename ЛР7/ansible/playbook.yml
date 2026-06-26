@@ -2,27 +2,61 @@
 - name: Setup Percona XtraDB Cluster
   hosts: pxc
   become: true
+  vars:
+    percona_release_deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
+
   tasks:
-    - name: Add Percona repository
+    - name: Install curl and gnupg
       apt:
-        name: percona-release
+        name: "{{ item }}"
         state: present
+        update_cache: yes
+      loop:
+        - curl
+        - gnupg2
+        - lsb-release
+      tags: [deps]
+
+    - name: Download percona-release deb
+      get_url:
+        url: "{{ percona_release_deb }}"
+        dest: /tmp/percona-release_latest.deb
       tags: [repo]
 
-    - name: Enable PXC repository
+    - name: Install percona-release
+      apt:
+        deb: /tmp/percona-release_latest.deb
+      tags: [repo]
+
+    - name: Enable PXC-80 repository
       command: percona-release setup pxc-80
       args:
         creates: /etc/apt/sources.list.d/percona-pxc-80-release.list
       tags: [repo]
 
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+      tags: [repo]
+
     - name: Install Percona XtraDB Cluster
       apt:
-        name: percona-xtradb-cluster
+        name: "{{ item }}"
         state: present
+      loop:
+        - percona-xtradb-cluster
+        - percona-xtradb-cluster-client
       tags: [install]
 
     - name: Bootstrap first node
-      command: systemctl start mysql@bootstrap
+      shell: |
+        if ! systemctl is-active mysql > /dev/null 2>&1; then
+          systemctl start mysql@bootstrap
+          sleep 5
+          mysql -e "CREATE USER IF NOT EXISTS 'monitor'@'%' IDENTIFIED BY 'monitor_pass'"
+          mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'monitor'@'%' WITH GRANT OPTION"
+          mysql -e "FLUSH PRIVILEGES"
+        fi
       when: bootstrap | bool
       tags: [bootstrap]
 
@@ -30,6 +64,12 @@
       systemd:
         name: mysql
         state: started
-        enabled: true
+        enabled: yes
       when: not (bootstrap | bool)
       tags: [start]
+
+    - name: Wait for PXC to be ready
+      wait_for:
+        port: 3306
+        timeout: 30
+      tags: [verify]
